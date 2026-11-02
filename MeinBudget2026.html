@@ -126,8 +126,9 @@ function save(){const el=document.getElementById("saving");el.classList.add("sho
 const key=(y,m)=>`${y}-${m}`;
 const ckey=()=>key(S.year,S.month);
 const gs=id=>(S.history[ckey()]||{})[id]||0;
-const fmt=n=>n.toLocaleString("de-DE",{maximumFractionDigits:0})+" €";
-function ss(id,val){if(!S.history[ckey()])S.history[ckey()]={};S.history[ckey()][id]=Math.max(0,val);save();}
+const fmt=n=>n.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const parseAmount=t=>{t=String(t).trim().replace(/\s|€/g,"");if(t.includes(","))t=t.replace(/\./g,"").replace(",",".");return parseFloat(t);};
+function ss(id,val){if(!S.history[ckey()])S.history[ckey()]={};S.history[ckey()][id]=Math.max(0,Math.round(val*100)/100);save();}
 function ring(pct,color,sz=52){const r=sz/2-6,circ=2*Math.PI*r,dash=Math.min(pct/100,1)*circ,c=pct>100?"#E05252":color;return `<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}" style="transform:rotate(-90deg);flex-shrink:0"><circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="5"/><circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${dash} ${circ}" style="transition:stroke-dasharray 0.5s cubic-bezier(.4,0,.2,1)"/></svg>`;}
 let tt=null;
 function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>el.classList.remove("show"),2200);}
@@ -135,7 +136,7 @@ function prevMonth(){if(S.month===0){S.month=11;S.year--;}else S.month--;S.editC
 function nextMonth(){if(S.month===11){S.month=0;S.year++;}else S.month++;S.editCat=null;render();}
 function setView(v){S.view=v;S.editCat=null;render();}
 function startEdit(id,mode){if(S.editCat===id&&S.editMode===mode){S.editCat=null;S.editMode=null;}else{S.editCat=id;S.editMode=mode;}render();if(S.editCat)setTimeout(()=>{const el=document.getElementById("inp-"+id);if(el)el.focus();},60);}
-function confirmEdit(id){const el=document.getElementById("inp-"+id);if(!el)return;const val=parseFloat(el.value.replace(",","."));if(!isNaN(val)&&val>=0){if(S.editMode==="add"){ss(id,gs(id)+val);toast("+ "+fmt(val)+" eingetragen ✓");}else{ss(id,val);toast("Gespeichert ✓");}}S.editCat=null;S.editMode=null;render();}
+function confirmEdit(id){const el=document.getElementById("inp-"+id);if(!el)return;const val=parseAmount(el.value);if(!isNaN(val)&&val>=0){if(S.editMode==="add"){ss(id,gs(id)+val);toast("+ "+fmt(val)+" eingetragen ✓");}else{ss(id,val);toast("Gespeichert ✓");}}S.editCat=null;S.editMode=null;render();}
 function onKey(e,id){if(e.key==="Enter")confirmEdit(id);if(e.key==="Escape"){S.editCat=null;S.editMode=null;render();}}
 function updateBudget(id,val){S.budgets[id]=Math.max(0,parseInt(val)||0);save();renderMonth();}
 function render(){
@@ -159,8 +160,8 @@ function renderMonth(){
     const s=gs(cat.id),b=S.budgets[cat.id],pct=b>0?(s/b)*100:0,over=s>b,active=S.editCat===cat.id;
     h+=`<div class="cc${over?" over":""}"><div class="ca" style="background:${cat.color}"></div>
       <div class="ct"><div><div class="ci">${cat.icon}</div><div class="cn">${cat.label}</div></div>${ring(pct,cat.color)}</div>`;
-    if(active){h+=`<div class="ir"><input class="ii" id="inp-${cat.id}" type="number" min="0" step="0.01" placeholder="${S.editMode==="add"?"+ Betrag":s}" inputmode="decimal" onkeydown="onKey(event,'${cat.id}')"><button class="io" style="background:${cat.color}" onclick="confirmEdit('${cat.id}')">OK</button></div>`;}
-    else{h+=`<div class="cam"><span class="cs" style="color:${over?"#E05252":"#F0EDE8"}">${s.toLocaleString("de-DE",{maximumFractionDigits:0})}</span><span class="co">/ ${b} €</span></div>`;}
+    if(active){h+=`<div class="ir"><input class="ii" id="inp-${cat.id}" type="text" placeholder="${S.editMode==="add"?"+ Betrag, z.B. 12,50":fmt(s)}" inputmode="decimal" autocomplete="off" onkeydown="onKey(event,'${cat.id}')"><button class="io" style="background:${cat.color}" onclick="confirmEdit('${cat.id}')">OK</button></div>`;}
+    else{h+=`<div class="cam"><span class="cs" style="color:${over?"#E05252":"#F0EDE8"}">${s.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="co">/ ${b} €</span></div>`;}
     h+=`<div class="pb"><div class="pf" style="width:${Math.min(pct,100)}%;background:${over?"#E05252":cat.color}"></div></div>
       <div class="cac"><button class="cb" onclick="startEdit('${cat.id}','add')">+ Ausgabe</button><button class="cb" onclick="startEdit('${cat.id}','set')">Gesamt setzen</button></div></div>`;
   });
