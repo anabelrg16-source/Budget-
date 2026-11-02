@@ -79,6 +79,7 @@
   #toast.act{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:8px 8px 8px 20px}
   #toast button{background:var(--bg);color:var(--text);border:none;border-radius:16px;padding:6px 12px;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer}
   .cc.wide{grid-column:1/-1}
+  .bk.warn{border-color:rgba(212,132,90,0.35)}
   .sv2{background:rgba(92,138,92,0.08);border-color:rgba(92,138,92,0.25)}.sv2.warn{background:rgba(224,82,82,0.08);border-color:rgba(224,82,82,0.3)}
   .ii.nt{font-family:'DM Sans',sans-serif;font-size:13px}
   .el{margin:0 0 11px;border-top:1px solid var(--border)}
@@ -121,6 +122,7 @@
 </main>
 <div id="toast"></div>
 <div id="saving">💾 speichert…</div>
+<input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
 <script>
 const CATS=[
   {id:"alltag",label:"Lebensmittel, Drogerie & Gesundheit",short:"Alltag",icon:"🛒",color:"#5C8A5C",def:350},
@@ -140,20 +142,20 @@ const SK="meinBudget2026_v3",OLD_SK="meinBudget2026_v2";
 const OLD_CATS={gastro:["essen","Gastronomie & Bars"],shopping:["kleidung","Shopping & Mode"],reise:["reise","Reise & Freizeit"],lebens:["alltag","Lebensmittel & Drogerie"],geschenke:["geschenke","Geschenke"],bargeld:["sonstiges","Bargeld & Diverses"]};
 const SEED={"2026-0":{gastro:620,shopping:310,reise:888,lebens:80,geschenke:90,bargeld:250},"2026-1":{gastro:780,shopping:420,reise:650,lebens:85,geschenke:95,bargeld:250},"2026-2":{gastro:870,shopping:860,reise:545,lebens:90,geschenke:340,bargeld:200},"2026-3":{gastro:300,shopping:180,reise:431,lebens:70,geschenke:80,bargeld:100}};
 // S.entries: {"2026-9":[{id,cat,amt,note,date}]}
-let S={year:2026,month:new Date().getMonth(),view:"month",entries:{},budgets:Object.fromEntries(CATS.map(c=>[c.id,c.def])),open:null,mode:null,editId:null};
+let S={year:2026,month:new Date().getMonth(),view:"month",entries:{},budgets:Object.fromEntries(CATS.map(c=>[c.id,c.def])),open:null,mode:null,editId:null,lastBackup:null};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const r2=n=>Math.round(n*100)/100;
 function convertOld(k,totals,fromStatement){const[y,m]=k.split("-").map(Number),date=new Date(y,m,1).toISOString().slice(0,10);return Object.entries(totals).filter(([o,v])=>OLD_CATS[o]&&v>0).map(([o,v])=>({id:uid(),cat:OLD_CATS[o][0],amt:r2(v),note:(fromStatement?"Aus Kontoauszug":"Übertrag")+" ("+OLD_CATS[o][1]+")",date}));}
 function load(){
   let ok=false;
-  try{const r=localStorage.getItem(SK);if(r){const d=JSON.parse(r);if(d.entries)S.entries=d.entries;if(d.budgets)Object.assign(S.budgets,d.budgets);ok=true;}}catch(e){}
+  try{const r=localStorage.getItem(SK);if(r){const d=JSON.parse(r);if(d.entries)S.entries=d.entries;if(d.budgets)Object.assign(S.budgets,d.budgets);if(d.lastBackup)S.lastBackup=d.lastBackup;ok=true;}}catch(e){}
   if(!ok){try{const r=localStorage.getItem(OLD_SK);if(r){const d=JSON.parse(r);Object.entries(d.history||{}).forEach(([k,v])=>{S.entries[k]=convertOld(k,v,k in SEED);});}}catch(e){}}
   Object.entries(SEED).forEach(([k,v])=>{if(!S.entries[k])S.entries[k]=convertOld(k,v,true);});
   if(!ok)saveNow();
 }
 let st=null;
-function saveNow(){try{localStorage.setItem(SK,JSON.stringify({entries:S.entries,budgets:S.budgets}));}catch(e){}}
+function saveNow(){try{localStorage.setItem(SK,JSON.stringify({entries:S.entries,budgets:S.budgets,lastBackup:S.lastBackup}));}catch(e){}}
 function save(){saveNow();const el=document.getElementById("saving");el.classList.add("show");clearTimeout(st);st=setTimeout(()=>el.classList.remove("show"),400);}
 const key=(y,m)=>`${y}-${m}`;
 const ckey=()=>key(S.year,S.month);
@@ -237,7 +239,38 @@ function renderMonth(){
   h+=`</div><div class="be" style="margin-top:13px"><div class="lbl" style="margin-bottom:6px">Budget anpassen</div><div style="font-size:11px;color:${bsum>VARIABLE?"#E05252":"#777"};margin-bottom:12px">Verteilt: ${fmt(bsum)} von ${fmt(VARIABLE)}${bsum>VARIABLE?" · ⚠ mehr als verfügbar, das Sparziel wäre nicht erreichbar":""}</div><div class="bg2">`;
   CATS.forEach(cat=>{h+=`<div class="br"><span style="font-size:13px">${cat.icon}</span><span style="font-size:12px;color:#777;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.short}</span><input class="bi" type="text" value="${S.budgets[cat.id]}" inputmode="numeric" onchange="updateBudget('${cat.id}',this.value)"><span style="font-size:11px;color:#444">€</span></div>`;});
   h+=`</div></div>`;
+  h+=backupBox();
   document.getElementById("vm").innerHTML=h;
+}
+// ---------- Backup ----------
+function backupBox(){
+  const days=S.lastBackup?Math.floor((Date.now()-new Date(S.lastBackup))/864e5):null,old=days===null||days>=7;
+  const info=S.lastBackup?"Letztes Backup: "+new Date(S.lastBackup).toLocaleDateString("de-DE")+(days>=7?" · ⚠ älter als 7 Tage":""):"⚠ Noch kein Backup gespeichert";
+  return `<div class="be bk${old?" warn":""}" style="margin-top:13px"><div class="lbl" style="margin-bottom:6px">Backup</div><div style="font-size:11px;color:${old?"#D4845A":"#777"};margin-bottom:6px">${info}</div><div style="font-size:11px;color:#555;margin-bottom:12px;line-height:1.4">Safari kann gespeicherte Daten löschen, wenn du den Tracker 7 Tage nicht öffnest. Sichere deine Einträge deshalb regelmäßig als Datei, z.B. in iCloud Drive.</div><div class="cac"><button class="cb" onclick="exportBackup()">💾 Backup speichern</button><button class="cb" onclick="document.getElementById('importFile').click()">📂 Backup laden</button></div></div>`;
+}
+async function exportBackup(){
+  const now=new Date(),d=now.toISOString().slice(0,10);
+  const data=JSON.stringify({app:"meinBudget",version:3,exported:now.toISOString(),entries:S.entries,budgets:S.budgets},null,1);
+  const name="Budget-Backup-"+d+".json",file=new File([data],name,{type:"application/json"});
+  let done=false;
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});done=true;}}
+  catch(e){if(e&&e.name==="AbortError"){toast("Backup abgebrochen");return;}}
+  if(!done){const url=URL.createObjectURL(file),a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+  S.lastBackup=now.toISOString();saveNow();render();toast("Backup gespeichert ✓");
+}
+function importBackup(input){
+  const f=input.files&&input.files[0];input.value="";if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let d;try{d=JSON.parse(rd.result);}catch(e){toast("Diese Datei ist kein gültiges Backup");return;}
+    if(!d||d.app!=="meinBudget"||typeof d.entries!=="object"){toast("Diese Datei ist kein gültiges Backup");return;}
+    const n=Object.values(d.entries).reduce((a,l)=>a+(Array.isArray(l)?l.length:0),0);
+    if(!confirm("Backup vom "+new Date(d.exported).toLocaleDateString("de-DE")+" laden ("+n+" Einträge)?\n\nAlle aktuellen Einträge werden dabei ersetzt."))return;
+    const before={entries:S.entries,budgets:{...S.budgets}};
+    S.entries=d.entries;if(d.budgets)Object.assign(S.budgets,d.budgets);closeAll();save();render();
+    toast("Backup geladen ✓",()=>{S.entries=before.entries;S.budgets=before.budgets;});
+  };
+  rd.readAsText(f);
 }
 function renderHistory(){
   const keys=Object.keys(S.entries).filter(k=>S.entries[k].length).sort((a,b)=>{const[ay,am]=a.split("-").map(Number),[by,bm]=b.split("-").map(Number);return ay-by||am-bm;}).slice(-8).reverse();
